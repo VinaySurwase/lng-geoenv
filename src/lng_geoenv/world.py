@@ -1,5 +1,12 @@
 import numpy as np
 
+ROUTE_RISK = {
+    "Suez": 0.6,
+    "Panama": 0.3,
+    "Atlantic": 0.2,
+    "Hormuz": 0.9
+}
+
 def update_ships(ships, blocked_routes):
     for ship in ships:
         if ship["status"] == "moving":
@@ -32,20 +39,18 @@ class World:
     Simulates routing risk and cost structure.
     """
 
-    def __init__(self, config):
-        self.risk_scale = config["risk_scale"]
-        self.price_volatility = config["price_volatility"]
+    def __init__(self, config=None):
+            self.price_volatility = 0.1
 
-    def sample_route_risk(self):
-        return np.random.uniform(0, 1) * self.risk_scale
+    def route_risk(self, route, blocked_routes):
+        base = ROUTE_RISK.get(route, 0.5)
+
+        if route in blocked_routes:
+            base *= 1.5  # amplify risk
+
+        return min(1.0, base)
 
     def fuel_cost(self, distance):
         base = 0.05 * distance
-        fluctuation = np.random.normal(0, self.price_volatility * base)
-        return max(0.0, base + fluctuation)
-
-    def storage_cost(self, storage_level):
-        return 0.02 * storage_level
-
-    def hedge_cost(self, hedge_amount):
-        return 0.1 * hedge_amount
+        noise = np.random.normal(0, self.price_volatility * base)
+        return max(0, base + noise)
