@@ -377,17 +377,61 @@ Validates environment correctness, reward bounds, storage constraints, and grade
 
 ### Docker Execution
 
-**Build:**
+#### Build the Docker image:
 
 ```bash
 docker build -t lng-geoenv .
 ```
 
-**Run:**
+#### Run the container:
+
+**Option 1: With LLM agent (using .env file):**
 
 ```bash
-docker run lng-geoenv
+docker run --env-file .env lng-geoenv
 ```
+
+**Option 2: Baseline mode (no API calls):**
+
+```bash
+docker run -e AGENT_ENABLED=0 lng-geoenv
+```
+
+**Option 3: View output in real-time:**
+
+```bash
+docker run -it --env-file .env lng-geoenv
+```
+
+#### Run specific commands inside container:
+
+**Run tests:**
+
+```bash
+docker run --env-file .env lng-geoenv uv run pytest tests/
+```
+
+**Run with debug flag:**
+
+```bash
+docker run --env-file .env lng-geoenv uv run python main.py --debug
+```
+
+**Run inference:**
+
+```bash
+docker run --env-file .env lng-geoenv uv run python inference.py
+```
+
+#### Common scenarios:
+
+| Command | Purpose |
+|---------|---------|
+| `docker build -t lng-geoenv .` | Build image |
+| `docker run --env-file .env lng-geoenv` | Run with LLM agent |
+| `docker run -e AGENT_ENABLED=0 lng-geoenv` | Run baseline |
+| `docker run -it --env-file .env lng-geoenv` | Run with interactive output |
+| `docker run --env-file .env lng-geoenv uv run pytest tests/` | Run tests |
 
 ---
 
