@@ -110,6 +110,11 @@ def evaluate_episode(history):
     total_cost = sum(h["metrics"].get("cost", 0.0) for h in history)
     total_shortage = sum(h["metrics"].get("shortage", 0.0) for h in history)
     total_risk = sum(h["metrics"].get("risk", 0.0) for h in history)
+    
+    
+    total_cost = np.log1p(total_cost)
+    total_shortage = np.log1p(total_shortage)
+    total_risk = np.log1p(total_risk)
 
     episode_count = len(history)
     avg_reward = total_reward / max(episode_count, 1)
@@ -217,7 +222,7 @@ def run_task(task_name, max_steps=10, seed=42):
 
         # --- Anticipation Evaluation ---
         anticipation_score = 0.0
-        expected_shortage = prev_storage < demand
+        expected_shortage = (prev_storage < demand * 1.2)
         action_type = action.get("type")
 
         if expected_shortage:
@@ -226,23 +231,45 @@ def run_task(task_name, max_steps=10, seed=42):
             elif action_type == "wait":
                 anticipation_score -= 1.0
 
+        if not expected_shortage and action_type in ["release", "hedge"]:
+            anticipation_score -= 0.5  # unnecessary action
         state, env_reward, env_done, env_info = env.step(action)
 
-        # --- Decision Quality Evaluation ---
         decision_score = 0.0
+
         storage_level = state.get("storage", {}).get("level", 0.0)
+        blocked_routes = state.get("blocked_routes", [])
+        ships = state.get("ships", [])
+        action_type = action.get("type")
 
-        if action_type == "reroute":
-            decision_score += 1.0
+        # Detect if any ship is actually on blocked route
+        ship_on_blocked_route = any(
+            ship.get("route") in blocked_routes for ship in ships
+        )
 
-        if action_type == "release" and storage_level < demand:
+        # --- Decision Logic ---
+
+        # Reroute logic
+        if action_type == "reroute" and ship_on_blocked_route:
+            decision_score += 1.5  # correct proactive reroute
+
+        elif action_type == "reroute":
+            decision_score -= 0.5  # unnecessary reroute
+
+        # Waiting during expected shortage
+        if action_type == "wait" and expected_shortage:
+            decision_score -= 1.5
+
+        # Releasing when not needed
+        if action_type == "release" and not expected_shortage:
+            decision_score -= 0.5
+
+        # Optional: keep good signals
+        if action_type == "release" and expected_shortage:
             decision_score += 1.0
 
         if action_type == "hedge" and state.get("price", 0) > 120:
             decision_score += 0.5
-
-        if action_type == "wait" and storage_level < demand:
-            decision_score -= 1.0
 
         history.append({
             "state": state,
