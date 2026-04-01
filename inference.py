@@ -3,6 +3,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import os
+import time
 
 from src.lng_geoenv.env import LNGEnv
 from src.lng_geoenv.tasks import get_task_config
@@ -10,12 +11,14 @@ from src.lng_geoenv.models import Action
 from src.lng_geoenv.agent import LNGAgent
 from src.lng_geoenv.evaluator import evaluate_episode
 
-# --- CONFIG ---
 API_KEY = os.getenv("GEMINI_API_KEY")
-MODEL_NAME = "gemini-2.0-flash"         # change this to the best model for implementing agent.py v2
+MODEL_NAME = "gemini-2.5-flash"
 
 MAX_STEPS = 20
 TASKS = ["stable", "volatile", "war"]
+
+# 🔥 LIMITED LLM USAGE
+LLM_STEPS = [0, 5, 10]
 
 
 def main():
@@ -47,8 +50,13 @@ def main():
         while not done and step < MAX_STEPS:
             state_dict = state.model_dump()
 
-            # --- AGENT DECISION ---
-            action_dict = agent.act(state_dict)
+            use_llm = step in LLM_STEPS
+
+            action_dict = agent.act(state_dict, use_llm=use_llm)
+
+            # 🔥 RATE LIMIT SAFE
+            if use_llm:
+                time.sleep(12)
 
             action = Action(
                 action_type=action_dict["type"],
@@ -57,23 +65,18 @@ def main():
                 new_route=action_dict["parameters"].get("new_route"),
             )
 
-            # --- STEP ENV ---
             state, reward, done, info = env.step(action)
 
-            # --- STORE HISTORY ---
             history.append({
                 "reward": reward.value,
                 "metrics": info.get("metrics", {})
             })
 
-            # --- DEBUG PRINT ---
             print(f"[Step {step+1}] {action_dict} → {reward.value:.2f}")
 
             step += 1
 
-        # --- FINAL EVALUATION (CORRECT) ---
         result = evaluate_episode(history)
-
         print(f"Score: {result['final_score']:.3f}")
 
     print("\n✅ Run complete.")
