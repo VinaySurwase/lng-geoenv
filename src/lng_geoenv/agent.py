@@ -1,7 +1,6 @@
 
 from google import genai
 
-VALID_ACTIONS = ["reroute", "store", "release", "hedge", "wait"]
 
 class LNGAgent:
     def __init__(self, model_name: str, api_key: str):
@@ -9,9 +8,77 @@ class LNGAgent:
         self.model_name = model_name
 
     # -----------------------------
-    # 🔥 FIXED BASELINE POLICY
+    # LLM ACTION
     # -----------------------------
-    def _baseline_action(self, state: dict) -> dict:
+    def get_llm_action(self, state: dict) -> dict:
+        print("🔥 LLM ACTION CALL")
+
+        try:
+            t = state["time_step"]
+            demand = state["demand_forecast"][t]
+            storage = state["storage"]["level"]
+            capacity = state["storage"]["capacity"]
+            budget = state["budget"]
+
+            ships = state.get("ships", [])
+            blocked = state.get("blocked_routes", [])
+
+            incoming = sum(s["capacity"] for s in ships if s.get("eta", 999) <= 1)
+
+            prompt = f"""
+You are managing LNG supply.
+
+GOAL:
+- Avoid shortage (MOST IMPORTANT)
+- Minimize cost
+
+STATE:
+Demand: {demand}
+Storage: {storage}/{capacity}
+Incoming: {incoming}
+Budget: {budget}
+Blocked Routes: {blocked}
+
+IMPORTANT:
+- release reduces storage
+- store/hedge increases supply
+- avoid shortage
+
+Choose ONE:
+wait / store / hedge / release_20 / release_50 / reroute
+
+ONLY output action.
+"""
+
+            res = self.client.models.generate_content(
+                model=self.model_name,
+                contents=prompt
+            )
+
+            text = res.text.strip().lower()
+            print(f"✅ LLM RAW: {text}")
+
+            if "store" in text:
+                return {"type": "store", "parameters": {"amount": 20}}
+            if "hedge" in text:
+                return {"type": "hedge", "parameters": {}}
+            if "reroute" in text:
+                return {"type": "reroute", "parameters": {"ship_id": 1, "new_route": "Atlantic"}}
+            if "50" in text:
+                return {"type": "release", "parameters": {"amount": 50}}
+            if "20" in text:
+                return {"type": "release", "parameters": {"amount": 20}}
+
+            return {"type": "wait", "parameters": {}}
+
+        except Exception as e:
+            print(f"❌ LLM ERROR: {e}")
+            return {"type": "wait", "parameters": {}}
+
+    # -----------------------------
+    # BASELINE (SAFE)
+    # -----------------------------
+    def baseline(self, state: dict) -> dict:
         t = state["time_step"]
         demand = state["demand_forecast"][t]
         storage = state["storage"]["level"]
@@ -26,15 +93,13 @@ class LNGAgent:
         supply = storage + incoming
         deficit = demand - supply
 
-        # --- KEY CORRECT LOGIC ---
-
-        # 1. If deficit → increase supply (NOT release)
+        # deficit handling
         if deficit > 0:
             if budget >= 20:
                 return {"type": "store", "parameters": {"amount": 20}}
             return {"type": "hedge", "parameters": {}}
 
-        # 2. Reroute blocked ships (future supply)
+        # reroute blocked ships
         for ship in ships:
             if ship["route"] in blocked:
                 return {
@@ -45,101 +110,54 @@ class LNGAgent:
                     }
                 }
 
-        # 3. Avoid over-storage
-        if storage > 0.85 * capacity:
+        # safe release
+        if storage > 0.85 * capacity and deficit <= 0:
             return {"type": "release", "parameters": {"amount": 20}}
 
         return {"type": "wait", "parameters": {}}
 
     # -----------------------------
-    # 🔥 FIXED SIMULATION (CRITICAL)
+    # SAFETY FILTER
     # -----------------------------
-    def _simulate_step(self, state: dict, action: dict):
-        next_state = dict(state)
-
-        storage = next_state["storage"]["level"]
-        capacity = next_state["storage"]["capacity"]
-
-        # Apply action (same semantics as env)
-        if action["type"] == "release":
-            amt = action["parameters"].get("amount", 0)
-            storage = max(0, storage - amt)
-
-        elif action["type"] == "store":
-            amt = action["parameters"].get("amount", 0)
-            storage = min(capacity, storage + amt)
-
-        elif action["type"] == "hedge":
-            storage += 20
-
-        # Approximate next demand
+    def safe(self, state: dict, action: dict) -> dict:
         t = state["time_step"]
         demand = state["demand_forecast"][t]
+        storage = state["storage"]["level"]
+        capacity = state["storage"]["capacity"]
 
         ships = state.get("ships", [])
         incoming = sum(s["capacity"] for s in ships if s.get("eta", 999) <= 1)
 
         supply = storage + incoming
-        deficit = max(0, demand - supply)
+        deficit = demand - supply
 
-        return {
-            "storage": storage,
-            "deficit": deficit
-        }
+        # 🚨 NEVER release if deficit
+        if deficit > 0 and action["type"] == "release":
+            return self.baseline(state)
 
-    # -----------------------------
-    # LLM (optional guidance)
-    # -----------------------------
-    def _call_llm(self, state: dict) -> str:
-        try:
-            prompt = f"""
-You are optimizing LNG supply.
+        # 🚨 NEVER reroute at start
+        if t == 0 and action["type"] == "reroute":
+            return self.baseline(state)
 
-Storage: {state['storage']['level']}
-Demand: {state['demand_forecast'][state['time_step']]}
+        # 🚨 ignore LLM when stable & safe
+        if deficit <= 0 and storage < 0.5 * capacity:
+            return self.baseline(state)
 
-Suggest: wait / store / hedge / release_25 / release_50
-"""
-
-            res = self.client.models.generate_content(
-                model=self.model_name,
-                contents=prompt
-            )
-
-            return res.text.strip().lower()
-        except:
-            return "wait"
-
-    def _parse_llm(self, text: str):
-        if "store" in text:
-            return {"type": "store", "parameters": {"amount": 20}}
-        if "hedge" in text:
-            return {"type": "hedge", "parameters": {}}
-        if "50" in text:
-            return {"type": "release", "parameters": {"amount": 50}}
-        if "25" in text:
-            return {"type": "release", "parameters": {"amount": 25}}
-        return {"type": "wait", "parameters": {}}
+        return action
 
     # -----------------------------
     # FINAL DECISION
     # -----------------------------
-    def act(self, state: dict) -> dict:
-        baseline = self._baseline_action(state)
+    def act(self, state: dict, use_llm=False) -> dict:
+        base = self.baseline(state)
 
-        # LLM only as refinement (safe)
-        llm_text = self._call_llm(state)
-        llm_action = self._parse_llm(llm_text)
-
-        # simulate both
-        base_sim = self._simulate_step(state, baseline)
-        llm_sim = self._simulate_step(state, llm_action)
-
-        # choose lower deficit
-        if llm_sim["deficit"] < base_sim["deficit"]:
+        if use_llm:
+            llm_action = self.get_llm_action(state)
+            llm_action = self.safe(state, llm_action)
             return llm_action
 
-        return baseline
+        return base
+
     
 
 # agent.py v2
