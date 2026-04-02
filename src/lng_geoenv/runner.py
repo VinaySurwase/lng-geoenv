@@ -1,11 +1,12 @@
 from .env import LNGEnv
 from .tasks import get_task_config
-from .agent import choose_action
+from .agent import choose_action, GeminiAgent
 from .models import Action
 from .evaluator import evaluate_episode
 
 # Debug flag: Set to True for verbose logging
 DEBUG = False
+COMPARISON_DEBUG = True  # Compare LLM vs Baseline
 
 
 def validate_action(action: Action):
@@ -16,7 +17,7 @@ def validate_action(action: Action):
     return True
 
 
-def run_task(task_name, max_steps=10, seed=42):
+def run_task(task_name, max_steps=10, seed=42, use_llm=False):
     task_config = get_task_config(task_name)
 
     config = {
@@ -36,6 +37,7 @@ def run_task(task_name, max_steps=10, seed=42):
     state = env.reset(seed=seed)
 
     history = []
+    agent = GeminiAgent(use_llm=True) if use_llm else None
 
     if DEBUG:
         print(f"\n{'=' * 60}")
@@ -53,7 +55,10 @@ def run_task(task_name, max_steps=10, seed=42):
         demand_forecast = state.demand_forecast
         demand = demand_forecast[min(time_step, len(demand_forecast) - 1)]
 
-        raw_action = choose_action(state.model_dump(), demand)
+        if use_llm:
+            raw_action = agent.choose_action(state.model_dump())
+        else:
+            raw_action = choose_action(state.model_dump(), demand)
         action = Action(
             **{
                 "action_type": raw_action.get("type"),
