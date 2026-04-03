@@ -1,8 +1,62 @@
-ameer = True
-if(ameer == False):
-    from dotenv import load_dotenv
-    load_dotenv()
 
+import os
+from dotenv import load_dotenv
+load_dotenv()
+
+from openai import OpenAI
+
+from src.lng_geoenv.env import LNGEnv
+from src.lng_geoenv.tasks import get_task_config
+from src.lng_geoenv.models import Action
+from src.lng_geoenv.agent import LNGAgent
+from src.lng_geoenv.evaluator import evaluate_episode
+
+
+# -----------------------------
+# ENV VARIABLES (MANDATORY)
+# -----------------------------
+API_BASE_URL = os.getenv("API_BASE_URL")
+MODEL_NAME = os.getenv("MODEL_NAME", "gpt-4o-mini")  # fallback
+HF_TOKEN = os.getenv("HF_TOKEN")
+
+# -----------------------------
+# OPENAI CLIENT (MANDATORY)
+# -----------------------------
+client = OpenAI(
+    base_url=API_BASE_URL,
+    api_key=HF_TOKEN
+)
+
+# -----------------------------
+# CONFIG
+# -----------------------------
+MAX_STEPS = 20
+TASKS = ["stable", "volatile", "war"]
+
+
+def main():
+    # 🔥 Pass client into agent
+    agent = LNGAgent(client=client, model_name=MODEL_NAME)
+
+    for task in TASKS:
+        print(f"\n=== Task: {task} ===")
+
+        config = {
+            "max_steps": MAX_STEPS,
+            "reward": {
+                "w_cost": 1.0,
+                "w_shortage": 6.0,
+                "w_delay": 1.0,
+                "w_risk": 3.0,
+                "alpha": 2.0,
+                "beta": 1.0,
+                "gamma": 2.0,
+            },
+        }
+
+        env = LNGEnv(
+            config=config,
+            task_config=get_task_config(task)
     import os
     import time
 
@@ -103,60 +157,46 @@ else:
             use_local=True
         )
 
-        for task in TASKS:
-            print(f"\n=== Task: {task} ===")
+        state = env.reset(seed=42)
 
-            config = {
-                "max_steps": MAX_STEPS,
-                "reward": {
-                    "w_cost": 1.0,
-                    "w_shortage": 6.0,
-                    "w_delay": 1.0,
-                    "w_risk": 3.0,
-                    "alpha": 2.0,
-                    "beta": 1.0,
-                    "gamma": 2.0,
-                },
-            }
+        history = []
+        step = 0
+        done = False
 
-            env = LNGEnv(config=config, task_config=get_task_config(task))
-            state = env.reset(seed=42)
+        while not done and step < MAX_STEPS:
+            state_dict = state.model_dump()
 
-            history = []
-            step = 0
-            done = False
+            # 🔥 LLM-driven decision (inside agent)
+            action_dict = agent.act(state_dict)
 
-            while not done and step < MAX_STEPS:
-                state_dict = state.model_dump()
+            action = Action(
+                action_type=action_dict["type"],
+                amount=action_dict["parameters"].get("amount", 0.0),
+                ship_id=action_dict["parameters"].get("ship_id"),
+                new_route=action_dict["parameters"].get("new_route"),
+            )
 
-                # 🔥 LLM EVERY STEP
-                action_dict = agent.act(state_dict)
+            state, reward, done, info = env.step(action)
 
-                action = Action(
-                    action_type=action_dict["type"],
-                    amount=action_dict["parameters"].get("amount", 0.0),
-                    ship_id=action_dict["parameters"].get("ship_id"),
-                    new_route=action_dict["parameters"].get("new_route"),
-                )
+            history.append({
+                "reward": reward.value,
+                "metrics": info.get("metrics", {})
+            })
 
-                state, reward, done, info = env.step(action)
+            print(f"[Step {step+1}] {action_dict} → {reward.value:.2f}")
 
-                history.append({
-                    "reward": reward.value,
-                    "metrics": info.get("metrics", {})
-                })
+            step += 1
 
-                print(f"[Step {step+1}] {action_dict} → {reward.value:.2f}")
+        # -----------------------------
+        # EVALUATION
+        # -----------------------------
+        result = evaluate_episode(history)
+        print(f"Score: {result['final_score']:.3f}")
 
-                step += 1
-
-            result = evaluate_episode(history)
-            print(f"Score: {result['final_score']:.3f}")
-
-        print("\n✅ Local LLM run complete.")
+    print("\n Run complete.")
 
 
-    if __name__ == "__main__":
-        main()
+if __name__ == "__main__":
+    main()
 
 
