@@ -17,4 +17,5 @@ RUN uv sync --frozen --no-install-project
 ENV PYTHONPATH=/app
 
 # Default command (long-lived server for HF Spaces)
-CMD ["uv", "run", "server"]
+# Note: we use --no-install-project above, so project console_scripts aren't installed.
+CMD ["uv", "run", "python", "server/app.py"]
