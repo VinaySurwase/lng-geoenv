@@ -1,5 +1,5 @@
-# Use official Python image
-FROM python:3.12-slim
+# HF Spaces compatible Dockerfile
+FROM python:3.11-slim
 
 # Set working directory
 WORKDIR /app
@@ -13,8 +13,12 @@ RUN pip install --no-cache-dir uv
 # Install dependencies AND project
 RUN uv sync --frozen
 
-# Set environment variable (important for imports)
+# Set environment variables
 ENV PYTHONPATH=/app
+ENV PORT=7860
 
-# Default command (long-lived server for HF Spaces)
-CMD ["python", "server/app.py"]
+# Expose port 7860 (HF Spaces default)
+EXPOSE 7860
+
+# Start the server with uvicorn on port 7860
+CMD ["uv", "run", "uvicorn", "server.app:app", "--host", "0.0.0.0", "--port", "7860"]
