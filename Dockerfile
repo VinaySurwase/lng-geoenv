@@ -10,12 +10,11 @@ COPY . .
 # Install uv (fast dependency manager)
 RUN pip install --no-cache-dir uv
 
-# Install dependencies using uv
-RUN uv sync --frozen --no-install-project
+# Install dependencies AND project
+RUN uv sync --frozen
 
 # Set environment variable (important for imports)
 ENV PYTHONPATH=/app
 
 # Default command (long-lived server for HF Spaces)
-# Note: we use --no-install-project above, so project console_scripts aren't installed.
-CMD ["uv", "run", "python", "server/app.py"]
+CMD ["python", "server/app.py"]
