@@ -1,4 +1,4 @@
-from lng_geoenv.safety import safety_override
+from .safety import safety_override
 
 class LNGAgent:
     def __init__(self, client, model_name):

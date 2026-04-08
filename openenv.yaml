@@ -1,5 +1,7 @@
 id: lng-geoenv
 name: LNG Geographic Environment
+version: "0.1.0"
+author: Vinay Surwase
 description: |
   Multi-agent LNG supply chain optimization with demand forecasting,
   route management, and dynamic reward computation. Three scenarios:
@@ -33,5 +35,5 @@ grader:
   metric: normalized_score
 
 runtime:
-  python_version: "3.12"
+  python_version: "3.11"
   entry: python inference.py
