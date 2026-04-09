@@ -1,14 +1,31 @@
 import os
 import json
 
-from dotenv import load_dotenv
-
 from src.lng_geoenv.env import LNGEnv
 from src.lng_geoenv.tasks import get_task_config
 from src.lng_geoenv.models import Action
 from src.lng_geoenv.evaluator import evaluate_episode
 
-load_dotenv()
+
+def _safe_load_dotenv() -> None:
+    """Load .env if python-dotenv is available.
+
+    The hackathon validator may execute this file in an environment that does not
+    install optional dependencies. Missing dotenv should not crash inference.
+    """
+
+    try:
+        from dotenv import load_dotenv  # type: ignore
+
+        load_dotenv()
+    except ModuleNotFoundError:
+        # Environment variables can be provided by the platform/container.
+        return
+    except Exception as e:
+        print(f"⚠️  Failed to load .env: {e}")
+
+
+_safe_load_dotenv()
 
 MAX_STEPS = 10
 TASKS = ["stable", "volatile", "war"]
