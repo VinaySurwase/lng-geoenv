@@ -413,7 +413,7 @@ For reference, untrained random agents achieve:
 ### Step 1: Clone Repository
 
 ```bash
-git clone https://github.com/Tanaybaviskar/lng-geoenv.git
+git clone https://github.com/VinaySurwase/lng-geoenv
 cd lng-geoenv
 ```
 
@@ -833,9 +833,9 @@ If you use LNG-GeoEnv in research, please cite:
 ```bibtex
 @software{lng_geoenv_2025,
   title={LNG-GeoEnv: Real-World Supply Chain Crisis Management},
-  author={Baviskar, Tanay and Contributors},
+  author={Vinay Surwase},
   year={2025},
-  url={https://github.com/Tanaybaviskar/lng-geoenv}
+  url={https://github.com/VinaySurwase/lng-geoenv}
 }
 ```
 
